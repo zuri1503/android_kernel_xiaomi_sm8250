@@ -6,7 +6,7 @@ on:
       device:
         description: 'Target Device Code (设备代号)'
         required: true
-        default: 'lmi'
+        default: 'thyme'
         type: choice
         options:
           - alioth
@@ -31,7 +31,7 @@ on:
         description: 'Target OS (目标系统)'
         required: true
         type: choice
-        default: 'both'
+        default: 'miui'
         options:
           - aosp
           - miui
@@ -40,7 +40,7 @@ on:
 jobs:
   build-kernel:
     name: Build ${{ github.event.inputs.device }} | KSU:${{ github.event.inputs.ksu }} | OS:${{ github.event.inputs.target_os }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     
     steps:
     - name: Checkout Repository
