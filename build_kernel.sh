@@ -94,19 +94,58 @@ sed -i '/^config LSM$/,/^help$/{ /^[[:space:]]*default/ { /baseband_guard/! s/se
 echo "[+] Baseband-guard setup finished."
 echo "==========================================="
 
+
 # ==========================================
 # AnyKernel3 Setup
 # ==========================================
 echo "==========================================="
-echo " [*] Initializing AnyKernel3 Workspace"
+echo "[*] Initializing AnyKernel3 Workspace"
 echo "==========================================="
+
 rm -rf anykernel
-echo "[*] Cloning AnyKernel3..."
-git clone https://github.com/AstideLabs/AnyKernel3 -b kona --single-branch --depth=1 anykernel
-echo "[+] AnyKernel3 cloned successfully."
+
+echo "[*] Cloning AnyKernel3 from osm0sis..."
+GIT_TERMINAL_PROMPT=0 git clone \
+    --depth=1 \
+    --single-branch \
+    --branch master \
+    https://github.com/osm0sis/AnyKernel3.git \
+    anykernel
+
+if [ ! -f "anykernel/anykernel.sh" ]; then
+    echo "[!] AnyKernel3 setup failed!"
+    exit 1
+fi
+
 echo "[*] Adjusting AnyKernel3..."
-sed -i "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" anykernel/anykernel.sh
-echo "[*] AnyKernel3 adjusted successfully."
+
+sed -i \
+    "s/^device\.name1=.*/device.name1=${DEVICE_NAME}/" \
+    anykernel/anykernel.sh
+
+sed -i \
+    's|^BLOCK=/dev/block/platform/omap/omap_hsmmc.0/by-name/boot;|BLOCK=boot;|' \
+    anykernel/anykernel.sh
+
+sed -i \
+    's/^IS_SLOT_DEVICE=0;/IS_SLOT_DEVICE=auto;/' \
+    anykernel/anykernel.sh
+
+sed -i \
+    's/^kernel.string=.*/kernel.string=APTKernel by AstideLabs/' \
+    anykernel/anykernel.sh
+
+# Required for correct Image/DTB/DTBO flashing
+PATCH_SCRIPT="$(dirname "$0")/patch_ak3.sh"
+
+if [ ! -f "$PATCH_SCRIPT" ]; then
+    echo "[!] Missing patch_ak3.sh"
+    exit 1
+fi
+
+bash "$PATCH_SCRIPT" "anykernel/anykernel.sh"
+
+echo "[+] AnyKernel3 configured successfully."
 echo "==========================================="
 
 # ==========================================
