@@ -6,7 +6,7 @@ on:
       device:
         description: 'Target Device Code (设备代号)'
         required: true
-        default: 'thyme'
+        default: 'lmi'
         type: choice
         options:
           - alioth
@@ -31,7 +31,7 @@ on:
         description: 'Target OS (目标系统)'
         required: true
         type: choice
-        default: 'miui'
+        default: 'both'
         options:
           - aosp
           - miui
@@ -65,12 +65,14 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-kernel-ccache-${{ github.event.inputs.device }}-
           ${{ runner.os }}-kernel-ccache-
+
     - name: Setup zyc-clang 16 Toolchain
       run: |
         mkdir -p $HOME/zyc-clang
         cd $HOME/zyc-clang
         wget -q https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz
         tar -zxvf Clang-16.0.6-20260807.tar.gz
+
     - name: Run Build Script
       run: |
         chmod +x build_kernel.sh
@@ -87,6 +89,7 @@ jobs:
         
         echo "Executing command: ./build_kernel.sh $ARGS"
         ./build_kernel.sh $ARGS
+
     - name: Upload Flashable ZIP
       uses: actions/upload-artifact@v7
       with:
