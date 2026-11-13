@@ -1,0 +1,144 @@
+name: Build AstideLabs SM8250 Kernel
+
+on:
+  workflow_dispatch:
+    inputs:
+      device:
+        description: 'Thiết bị đích (Target Device)'
+        required: true
+        default: 'thyme'
+        type: choice
+        options:
+          - thyme
+          - alioth
+          - apollo
+          - cas
+          - cmi
+          - dagu
+          - elish
+          - enuma
+          - lmi
+          - munch
+          - pipa
+          - psyche
+          - umi
+      ksu:
+        description: 'Tích hợp KernelSU (ReSukiSU + SuSFS)'
+        required: true
+        type: boolean
+        default: true
+      target_os:
+        description: 'Hệ điều hành đích (Target OS)'
+        required: true
+        type: choice
+        default: 'both'
+        options:
+          - aosp
+          - miui
+          - both
+
+jobs:
+  build-kernel:
+    name: Build ${{ inputs.device }} | KSU:${{ inputs.ksu }} | OS:${{ inputs.target_os }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+
+    steps:
+      - name: Checkout Kernel Source
+        uses: actions/checkout@v4
+        with:
+          # Không dùng fetch-depth: 1 vì build.sh dùng `git rev-parse --short=8 HEAD`
+          # và các script KSU thường cần lịch sử git để tính toán version code
+          fetch-depth: 50
+          submodules: recursive
+
+      - name: Set up Build Environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            bc bison build-essential ccache cpio curl flex gawk \
+            git gnupg gperf imagemagick libncurses-dev \
+            lib32z1-dev lz4 libsdl1.2-dev libssl-dev \
+            libxml2 libxml2-utils libyaml-dev lzop pkg-config \
+            pngcrush python3 python-is-python3 rsync schedtool \
+            squashfs-tools xsltproc zip zlib1g-dev
+
+      - name: Cache ccache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ccache_mikernel
+          key: ${{ runner.os }}-ccache-astide-${{ inputs.device }}-${{ github.run_id }}
+          restore-keys: |
+            ${{ runner.os }}-ccache-astide-${{ inputs.device }}-
+            ${{ runner.os }}-ccache-astide-
+
+      - name: Setup ZyC-Clang 16 Toolchain
+        run: |
+          mkdir -p "$HOME/zyc-clang"
+          cd "$HOME/zyc-clang"
+          curl -fL --retry 3 -o clang.tar.gz \
+            "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz"
+          tar -zxf clang.tar.gz
+          rm -f clang.tar.gz
+
+      - name: Execute Kernel Build
+        id: build
+        run: |
+          # Tự động nhận diện build.sh (chuẩn của AstideLabs) hoặc build_kernel.sh (nếu dùng bản mod)
+          if [ -f "build.sh" ]; then
+            SCRIPT="./build.sh"
+          elif [ -f "build_kernel.sh" ]; then
+            SCRIPT="./build_kernel.sh"
+          else
+            echo "::error::Không tìm thấy build.sh hoặc build_kernel.sh trong repo!"
+            exit 1
+          fi
+          
+          chmod +x "$SCRIPT"
+
+          # Lắp ghép tham số chuẩn theo README của AstideLabs:
+          # bash build.sh <device> [ksu] [aosp|miui]
+          ARGS="${{ inputs.device }}"
+
+          if [ "${{ inputs.ksu }}" == "true" ]; then
+            ARGS="$ARGS ksu"
+          fi
+
+          if [ "${{ inputs.target_os }}" != "both" ]; then
+            ARGS="$ARGS ${{ inputs.target_os }}"
+          fi
+
+          echo "Executing: bash $SCRIPT $ARGS"
+          bash "$SCRIPT" $ARGS
+
+          # Lấy mã commit ngắn để đặt tên file Artifact rõ ràng
+          SHORT_SHA=$(git rev-parse --short=8 HEAD)
+          echo "sha=$SHORT_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ "${{ inputs.ksu }}" == "true" ]; then
+            echo "ksu_tag=ReSukiSU-SuSFS" >> "$GITHUB_OUTPUT"
+          else
+            echo "ksu_tag=NoKSU" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Collect Flashable ZIPs
+        run: |
+          mkdir -p artifact_out
+          # Tìm toàn bộ file .zip vừa được tạo bởi AnyKernel3 (ở thư mục gốc hoặc trong thư mục anykernel)
+          find . -maxdepth 2 -type f -name "*.zip" \
+            ! -path "./.git/*" \
+            ! -path "./artifact_out/*" \
+            -exec cp -v {} artifact_out/ \;
+
+          if [ -z "$(ls -A artifact_out)" ]; then
+            echo "::error::Không tìm thấy file .zip nào sau khi build!"
+            exit 1
+          fi
+
+      - name: Upload Flashable Kernel ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: APTKernel-${{ inputs.device }}-${{ inputs.target_os }}-${{ steps.build.outputs.ksu_tag }}-${{ steps.build.outputs.sha }}
+          path: artifact_out/*.zip
+          compression-level: 0
+          if-no-files-found: error
